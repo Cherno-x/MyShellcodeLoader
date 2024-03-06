@@ -1,2 +1,2 @@
-# -Loader
-记录我的免杀shellcode Loader
+# MyShellcdeLoader
+记录本人自用的shellcodeloader，仓库内loader全部经过实际测试，免杀最好配合伪签名+resource hacker使用
