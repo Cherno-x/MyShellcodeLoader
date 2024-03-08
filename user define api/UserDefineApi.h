@@ -180,8 +180,6 @@ PVOID MyGetProcAddress(HMODULE handle, LPCSTR Name) {
 #define MS_PER_SECOND 1000 
 #define SLEEPTIME INTERVAL*MS_PER_SECOND 
 
-typedef NTSTATUS(WINAPI* pSystemFunction032)(PVOID, PVOID);
-
 unsigned long long __get_timestamp()
 {
     const size_t UNIX_TIME_START = 0x019DB1DED53E8000;
