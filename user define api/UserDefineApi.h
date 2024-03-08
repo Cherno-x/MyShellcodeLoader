@@ -97,7 +97,7 @@ BOOL StringEq(IN LPCWSTR s1, IN LPCWSTR s2) {
 
 }
 HMODULE MyGetModuleHandle(IN LPCWSTR szModuleName) {
-    //»ñÈ¡PEB½á¹¹
+    //ï¿½ï¿½È¡PEBï¿½á¹¹
 
 #ifdef _WIN64 
     PPEB pPeb = (PEB*)(__readgsqword(0x60));
@@ -105,13 +105,13 @@ HMODULE MyGetModuleHandle(IN LPCWSTR szModuleName) {
     PPEB pPeb = (PEB*)(__readfsdword(0x30));
 #endif
 
-    //»ñÈ¡Ldr
+    //ï¿½ï¿½È¡Ldr
     PPEB_LDR_DATA pLdr = (PPEB_LDR_DATA)(pPeb->Ldr);
 
-    //»ñÈ¡Á´±íÖÐ°üº¬¹ØÓÚµÚÒ»¸øÄ£¿éÐÅÏ¢µÄµÚÒ»¸öÔªËØ¡£
+    //ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½Ð°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½Ò»ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½Äµï¿½Ò»ï¿½ï¿½Ôªï¿½Ø¡ï¿½
     PLDR_DATA_TABLE_ENTRY pDte = (PLDR_DATA_TABLE_ENTRY)(pLdr->InMemoryOrderModuleList.Flink);
 
-    //ÓÉÓÚÃ¿¸öpDteÔÚÁ´±íÖÐ¶¼´ú±íÒ»¸öÎ¨Ò»µÄDLL£¬ËùÒÔ¿ÉÒÔÊ¹ÓÃÒÔÏÂÒ»ÐÐ´úÂë·ÃÎÊÏÂÒ»¸öÔªËØ¡£
+    //ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½pDteï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½Î¨Ò»ï¿½ï¿½DLLï¿½ï¿½ï¿½ï¿½ï¿½Ô¿ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½Ôªï¿½Ø¡ï¿½
 
     while (pDte) {
         if (pDte->FullDllName.Length != NULL) {
@@ -138,32 +138,32 @@ HMODULE MyGetModuleHandle(IN LPCWSTR szModuleName) {
 PVOID MyGetProcAddress(HMODULE handle, LPCSTR Name) {
     PBYTE pBase = (PBYTE)handle;
 
-    //»ñÈ¡dosÍ·µØÖ·
+    //ï¿½ï¿½È¡dosÍ·ï¿½ï¿½Ö·
     PIMAGE_DOS_HEADER pdosHeader = (PIMAGE_DOS_HEADER)pBase;
     if (pdosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
         return NULL;
     }
 
-    //»ñÈ¡NTÍ·µØÖ·
+    //ï¿½ï¿½È¡NTÍ·ï¿½ï¿½Ö·
     PIMAGE_NT_HEADERS pImageNtHeaders = (PIMAGE_NT_HEADERS)(pBase + pdosHeader->e_lfanew);
     if (pImageNtHeaders->Signature != IMAGE_NT_SIGNATURE) {
         return NULL;
     }
 
-    //»ñÈ¡¿ÉÑ¡PEÍ·µØÖ·
+    //ï¿½ï¿½È¡ï¿½ï¿½Ñ¡PEÍ·ï¿½ï¿½Ö·
     IMAGE_OPTIONAL_HEADER peOptionHeader = pImageNtHeaders->OptionalHeader;
 
-    //»ñÈ¡¿ÉÑ¡PEÍ·µÄDataDirectory,´ËÖÐ°üº¬ÁËÊý¾ÝÄ¿Â¼µÄÐéÄâµØÖ·£¬¿É»ñÈ¡µ¼³ö±íµÄÐéÄâµØÖ·
+    //ï¿½ï¿½È¡ï¿½ï¿½Ñ¡PEÍ·ï¿½ï¿½DataDirectory,ï¿½ï¿½ï¿½Ð°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿Â¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½É»ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·
     PIMAGE_EXPORT_DIRECTORY pExportVirtualAddress = (PIMAGE_EXPORT_DIRECTORY)(pBase + peOptionHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 
-    //»ñÈ¡µ¼³ö±íÖÐµÄº¯ÊýÃû³Æ
+    //ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÐµÄºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     PDWORD FunctionNameArray = (PDWORD)(pBase + pExportVirtualAddress->AddressOfNames);
-    //»ñÈ¡µ¼³ö±íÖÐµÄº¯ÊýµØÖ·
+    //ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÐµÄºï¿½ï¿½ï¿½ï¿½ï¿½Ö·
     PDWORD FunctionAddressArray = (PDWORD)(pBase + pExportVirtualAddress->AddressOfFunctions);
-    //»ñÈ¡ÐòºÅ±í
+    //ï¿½ï¿½È¡ï¿½ï¿½Å±ï¿½
     PWORD ordinArray = (PWORD)(pBase + pExportVirtualAddress->AddressOfNameOrdinals);
 
-    //Ñ­»·±éÀúÑ°ÕÒÖ¸¶¨º¯ÊýµÄµØÖ·
+    //Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ°ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Äµï¿½Ö·
     for (DWORD i = 0; i < pExportVirtualAddress->NumberOfFunctions; i++) {
         CHAR* pFunctionName = (CHAR*)(pBase + FunctionNameArray[i]);
         PVOID functionAddress = (PVOID)(pBase + FunctionAddressArray[ordinArray[i]]);
@@ -172,4 +172,31 @@ PVOID MyGetProcAddress(HMODULE handle, LPCSTR Name) {
             return functionAddress;
         }
     }
+}
+
+
+
+#define INTERVAL rand() % 26 
+#define MS_PER_SECOND 1000 
+#define SLEEPTIME INTERVAL*MS_PER_SECOND 
+
+typedef NTSTATUS(WINAPI* pSystemFunction032)(PVOID, PVOID);
+
+unsigned long long __get_timestamp()
+{
+    const size_t UNIX_TIME_START = 0x019DB1DED53E8000;
+    const size_t TICKS_PER_MILLISECOND = 1000;
+    LARGE_INTEGER time;
+    time.LowPart = *(DWORD*)(0x7FFE0000 + 0x14);
+    time.HighPart = *(long*)(0x7FFE0000 + 0x1c);
+    return (unsigned long long)((time.QuadPart - UNIX_TIME_START) / TICKS_PER_MILLISECOND);
+}
+
+void __alt_sleepms(size_t ms)
+{
+    volatile size_t x = rand();
+    const unsigned long long end = __get_timestamp() + ms;
+    while (__get_timestamp() < end) { x += 1; }
+    if (__get_timestamp() - end > 2000) return;
+
 }
