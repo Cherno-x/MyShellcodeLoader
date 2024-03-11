@@ -72,7 +72,7 @@ int main()
 
     rc4_crypt(s, shellcode, sizeof(shellcode) - 1);
 
-    printf("encrypted  : 1111111");
+    printf("encrypted  : ");
     for (int i = 0; i < sizeof(shellcode) - 1; i++) {
         printf("\\x%02x", shellcode[i]);
     }
