@@ -3,15 +3,6 @@
 #include <Windows.h>
 #include <winternl.h>
 
-typedef NTSTATUS(WINAPI* _SystemFunction033)(
-    struct ustring* memoryRegion,
-    struct ustring* keyPointer);
-
-struct ustring {
-    DWORD Length;
-    DWORD MaximumLength;
-    PUCHAR Buffer;
-} scdata, key;
 
 struct rc4_state
 {
