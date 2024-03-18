@@ -20,6 +20,8 @@
 
 ##### iii. RC4
 
+**iV. XOR**
+
 
 
 #### 2.call obfuscation
