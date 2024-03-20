@@ -22,31 +22,43 @@
 
 **iV. XOR**
 
-
-
 #### 2.call obfuscation
 
+#### 3.Entropy
 
-
-
+#### 4.Signature
 
 
 
 ### 0x02 Dynamic Behavioral Evasion
 
+#### **1.Anti sandbox**
 
+#### **2.Anti VM**
+
+#### **3.reload ntdll**
+
+#### **4.Syscall**
+
+#### **5.进程断链**
+
+#### 6.COM组件滥用
 
 
 
 ### 0x03 Memory Scanners Evasion
 
-
+#### **1.睡眠混淆**
 
 
 
 ### 0x04 Network traffic Evasion
 
+#### 1.C2profile
 
+
+
+#### 2.云函数
 
 
 
