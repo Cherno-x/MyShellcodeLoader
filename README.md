@@ -43,8 +43,4 @@ Shellcode Loader是一种常见的技术，用于将恶意代码加载到目标�
 
 
 
-### Contact Me
 
-欢迎成为本项目的贡献者，联系作者：
-
-WeChat: **lxlxaiaiai**
