@@ -182,6 +182,24 @@ void XOR(char * data, size_t data_len, char * key, size_t key_len) {
 
 
 
+异或加密也可以进行拓展，比如使用16进制数组轮流加密，这样能够增加爆破难度。
+
+示例
+
+```python
+def xor_encrypt_bytes(bytes_array, key):
+    encrypted_data = bytearray()
+    key_index = 0
+    for byte in bytes_array:
+        encrypted_byte = byte ^ key[key_index]
+        encrypted_data.append(encrypted_byte)
+        key_index = (key_index + 1) % len(key)
+
+    return encrypted_data
+```
+
+
+
 # RC4
 
 RC4（Rivest Cipher 4）是一种流密码算法，它将明文与密钥流按位进行异或运算来实现加密和解密。密钥流是由一个伪随机生成器生成的伪随机序列，这个序列是根据密钥生成的，所以密钥的选择对加密的安全性至关重要。
@@ -280,5 +298,368 @@ int main()
     return 0;
 }
 
+```
+
+### RC4 加密 - 方法 2
+
+未公开的 Windows NTAPI`SystemFunction032`提供了更快、更小的 RC4 算法实现。有关此 API 的其他信息可以在[此 Wine API 页面](https://source.winehq.org/WineAPI/SystemFunction032.html)上找到。
+
+文档页面指出该函数`SystemFunction032`接受两个类型的参数`USTRING`。
+
+```c++
+ NTSTATUS SystemFunction032
+ (
+  struct ustring*       data,
+  const struct ustring* key
+ )
+```
+
+`USTRING`是一个未公开结构，可以在[wine/crypt.h](https://github.com/wine-mirror/wine/blob/master/dlls/advapi32/crypt.h#L94)中找到结构定义。结构如下图所示。
+
+```c++
+typedef struct
+{
+	DWORD	Length;         // Size of the data to encrypt/decrypt
+	DWORD	MaximumLength;  // Max size of the data to encrypt/decrypt, although often its the same as Length (USTRING.Length = USTRING.MaximumLength = X)
+	PVOID	Buffer;         // The base address of the data to encrypt/decrypt
+
+} USTRING;
+```
+
+既然`知道了`USTRING结构体，`SystemFunction032`就可以使用该函数了。
+
+#### 检索 SystemFunction032 的地址
+
+要使用`SystemFunction032`，必须首先检索其地址。由于`SystemFunction032`是从导出的`advapi32.dll`，因此必须使用 DLL 将其加载到进程中`LoadLibrary`。函数调用的返回值可以直接在`GetProcAddress`.
+
+一旦成功检索到 的地址，就应该将其类型转换为与先前引用的[Wine API 页面](https://source.winehq.org/WineAPI/SystemFunction032.html)`SystemFunction032`上找到的定义相匹配的函数指针。但是，返回的地址可以直接从 进行转换。这一切都在下面的代码片段中得到了证明。
+
+`GetProcAddress`
+
+```c++
+fnSystemFunction032 SystemFunction032 = (fnSystemFunction032) GetProcAddress(LoadLibraryA("Advapi32"), "SystemFunction032");
+```
+
+`SystemFunction032`函数指针定义为`fnSystemFunction032`，数据类型如下所示。
+
+```c++
+typedef NTSTATUS(NTAPI* fnSystemFunction032)(
+	struct USTRING* Data,   // Structure of type USTRING that holds information about the buffer to encrypt / decrypt 
+	struct USTRING* Key     // Structure of type USTRING that holds information about the key used while encryption / decryption
+);
+```
+
+demo
+
+```c++
+typedef struct
+{
+	DWORD	Length;
+	DWORD	MaximumLength;
+	PVOID	Buffer;
+
+} USTRING;
+
+typedef NTSTATUS(NTAPI* fnSystemFunction032)(
+	struct USTRING* Data,
+	struct USTRING* Key
+);
+
+BOOL Rc4EncryptionViaSystemFunc032(IN PBYTE pRc4Key, IN PBYTE pPayloadData, IN DWORD dwRc4KeySize, IN DWORD sPayloadSize) {
+
+	NTSTATUS STATUS	= NULL;
+	
+	USTRING Data = { 
+		.Buffer         = pPayloadData,
+		.Length         = sPayloadSize,
+		.MaximumLength  = sPayloadSize
+	};
+
+	USTRING	Key = {
+		.Buffer         = pRc4Key,
+		.Length         = dwRc4KeySize,
+		.MaximumLength  = dwRc4KeySize
+	},
+
+	fnSystemFunction032 SystemFunction032 = (fnSystemFunction032)GetProcAddress(LoadLibraryA("Advapi32"), "SystemFunction032");
+
+	if ((STATUS = SystemFunction032(&Data, &Key)) != 0x0) {
+		printf("[!] SystemFunction032 FAILED With Error: 0x%0.8X \n", STATUS);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+```
+
+
+
+# IPv4/IPv6 混淆
+
+IPv4/IPv6Fuscation 是一种混淆技术，其中 shellcode 的字节被转换为 IPv4 或 IPv6 字符串。
+
+- **IPv4混淆** - 由于 IPv4 地址由 4 个八位位组组成，因此 IPv4 混淆使用 4 个字节生成单个 IPv4 字符串，每个字节代表一个八位位组。获取当前为十六进制的每个字节并将其转换为十进制格式以获得一个八位字节。如，FC十进制为 252，FC 48 83 E4将为252.72.131.228
+- **IPv6混淆** - 这与 IPv4混淆是类似的逻辑，但每个 IP 地址不使用 4 个字节，而是使用 16 个字节来生成一个 IPv6 地址。此外，IPv6 地址不需要将字节转换为十进制。以FC 48 83 E4 F0 E8 C0 00 00 00 41 51 41 50 52 51为例，它将是`FC48:83E4:F0E8:C000:0000:4151:4150:5251`.
+
+### IPv4
+
+生成 IPv4 地址需要 4 个字节，因此 shellcode 必须是 4 的倍数。如果不满足该要求，可以创建一个填充 shellcode 的函数。
+
+`GenerateIpv4`是一个辅助函数，需要 4 个 shellcode 字节并用于`sprintf`生成 IPv4 地址。
+
+```c++
+// 这个函数取4个字节并且把他们输出为IPv4格式
+char* GenerateIpv4(int a, int b, int c, int d) {
+	unsigned char Output [32];
+  
+	sprintf(Output, "%d.%d.%d.%d", a, b, c, d);
+	return (char*)Output;
+}
+
+
+// 生成shellcode的IPv4格式
+BOOL GenerateIpv4Output(unsigned char* pShellcode, SIZE_T ShellcodeSize) {
+	if (pShellcode == NULL || ShellcodeSize == NULL || ShellcodeSize % 4 != 0){
+		return FALSE;
+	}
+	printf("char* Ipv4Array[%d] = { \n\t", (int)(ShellcodeSize / 4));
+
+	int c = 4, counter = 0;
+	char* IP = NULL;
+
+	for (int i = 0; i < ShellcodeSize; i++) {
+		if (c == 4) {
+			counter++;
+			IP = GenerateIpv4(pShellcode[i], pShellcode[i + 1], pShellcode[i + 2], pShellcode[i + 3]);
+
+			if (i == ShellcodeSize - 4) {
+				printf("\"%s\"", IP);
+				break;
+			}
+			else {
+				printf("\"%s\", ", IP);
+			}
+
+			c = 1;
+
+			if (counter % 8 == 0) {
+				printf("\n\t");
+			}
+		}
+		else {
+			c++;
+		}
+	}
+	printf("\n};\n\n");
+	return TRUE;
+}
+```
+
+
+
+### IPv6
+
+使用 IPv6混淆时，shellcode 应为 16 的倍数。同样，如果不满足该要求，则可以创建一个填充 shellcode 的函数。
+
+```c++
+char* GenerateIpv6(int a, int b, int c, int d, int e, int f, int g, int h, int i, int j, int k, int l, int m, int n, int o, int p) {
+	char Output0[32], Output1[32], Output2[32], Output3[32];
+	char result[128];
+
+	sprintf(Output0, "%0.2X%0.2X:%0.2X%0.2X", a, b, c, d);
+
+	sprintf(Output1, "%0.2X%0.2X:%0.2X%0.2X", e, f, g, h);
+
+	sprintf(Output2, "%0.2X%0.2X:%0.2X%0.2X", i, j, k, l);
+
+	sprintf(Output3, "%0.2X%0.2X:%0.2X%0.2X", m, n, o, p);
+
+	sprintf(result, "%s:%s:%s:%s", Output0, Output1, Output2, Output3);
+
+	return (char*)result;
+}
+
+
+BOOL GenerateIpv6Output(unsigned char* pShellcode, SIZE_T ShellcodeSize) {
+	if (pShellcode == NULL || ShellcodeSize == NULL || ShellcodeSize % 16 != 0){
+		return FALSE;
+	}
+	printf("char* Ipv6Array [%d] = { \n\t", (int)(ShellcodeSize / 16));
+
+	int c = 16, counter = 0;
+	char* IP = NULL;
+	
+	for (int i = 0; i < ShellcodeSize; i++) {
+		if (c == 16) {
+			counter++;
+			IP = GenerateIpv6(
+				pShellcode[i], pShellcode[i + 1], pShellcode[i + 2], pShellcode[i + 3],
+				pShellcode[i + 4], pShellcode[i + 5], pShellcode[i + 6], pShellcode[i + 7],
+				pShellcode[i + 8], pShellcode[i + 9], pShellcode[i + 10], pShellcode[i + 11],
+				pShellcode[i + 12], pShellcode[i + 13], pShellcode[i + 14], pShellcode[i + 15]
+			);
+			if (i == ShellcodeSize - 16) {
+				printf("\"%s\"", IP);
+				break;
+			}
+			else {
+				printf("\"%s\", ", IP);
+			}
+			c = 1;
+
+			if (counter % 3 == 0) {
+				printf("\n\t");
+			}
+		}
+		else {
+			c++;
+		}
+	}
+	printf("\n};\n\n");
+	return TRUE;
+}
+```
+
+
+
+一旦混淆的payload逃避了静态检测，就需要对其进行反混淆才能执行。反混淆过程将反转混淆过程，允许 IP 地址生成字节。执行反混淆需要满足以下条件：
+
+- **IPv4 反混淆**- 这需要使用 NTAPI [RtlIpv4StringToAddressA](https://learn.microsoft.com/en-us/windows/win32/api/ip2string/nf-ip2string-rtlipv4stringtoaddressa)。它将 IPv4 地址的字符串表示形式转换为二进制 IPv4 地址。
+- **IPv6 反混淆**- 与之前的功能类似，IPv6 反混淆将需要使用另一个 NTAPI [RtlIpv6StringToAddressA](https://learn.microsoft.com/en-us/windows/win32/api/ip2string/nf-ip2string-rtlipv6stringtoaddressa)。该函数将 IPv6 地址转换为二进制 IPv6 地址。
+
+### IPv4反混淆
+
+代码示例
+
+```c++
+typedef NTSTATUS (NTAPI* fnRtlIpv4StringToAddressA)(
+	PCSTR		S,
+	BOOLEAN		Strict,
+	PCSTR*		Terminator,
+   	PVOID		Addr
+);
+
+BOOL Ipv4Deobfuscation(IN CHAR* Ipv4Array[], IN SIZE_T NmbrOfElements, OUT PBYTE* ppDAddress, OUT SIZE_T* pDSize) {
+
+	PBYTE           pBuffer                 = NULL, 
+                    TmpBuffer               = NULL;
+
+	SIZE_T          sBuffSize               = NULL;
+
+	PCSTR           Terminator              = NULL;
+
+	NTSTATUS        STATUS                  = NULL;
+
+	// Getting RtlIpv4StringToAddressA address from ntdll.dll
+	fnRtlIpv4StringToAddressA pRtlIpv4StringToAddressA = (fnRtlIpv4StringToAddressA)GetProcAddress(GetModuleHandle(TEXT("NTDLL")), "RtlIpv4StringToAddressA");
+	if (pRtlIpv4StringToAddressA == NULL){
+		printf("[!] GetProcAddress Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	// Getting the real size of the shellcode which is the number of IPv4 addresses * 4
+	sBuffSize = NmbrOfElements * 4;
+
+	// Allocating memory which will hold the deobfuscated shellcode
+	pBuffer = (PBYTE)HeapAlloc(GetProcessHeap(), 0, sBuffSize);
+	if (pBuffer == NULL){
+		printf("[!] HeapAlloc Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+	
+	// Setting TmpBuffer to be equal to pBuffer
+	TmpBuffer = pBuffer;
+
+	// Loop through all the IPv4 addresses saved in Ipv4Array
+	for (int i = 0; i < NmbrOfElements; i++) {
+
+		// Deobfuscating one IPv4 address at a time
+		// Ipv4Array[i] is a single ipv4 address from the array Ipv4Array
+		if ((STATUS = pRtlIpv4StringToAddressA(Ipv4Array[i], FALSE, &Terminator, TmpBuffer)) != 0x0) {
+			// if it failed
+			printf("[!] RtlIpv4StringToAddressA Failed At [%s] With Error 0x%0.8X", Ipv4Array[i], STATUS);
+			return FALSE;
+		}
+
+		// 4 bytes are written to TmpBuffer at a time
+		// Therefore Tmpbuffer will be incremented by 4 to store the upcoming 4 bytes
+		TmpBuffer = (PBYTE)(TmpBuffer + 4);
+
+	}
+
+	// Save the base address & size of the deobfuscated payload
+	*ppDAddress     = pBuffer;
+	*pDSize         = sBuffSize;
+
+	return TRUE;
+}
+```
+
+### IPv6反混淆
+
+代码示例
+
+```c++
+typedef NTSTATUS(NTAPI* fnRtlIpv6StringToAddressA)(
+	PCSTR		S,
+	PCSTR*		Terminator,
+	PVOID		Addr
+);
+
+BOOL Ipv6Deobfuscation(IN CHAR* Ipv6Array[], IN SIZE_T NmbrOfElements, OUT PBYTE* ppDAddress, OUT SIZE_T* pDSize) {
+
+	PBYTE           pBuffer                 = NULL, 
+                    TmpBuffer               = NULL;
+
+	SIZE_T          sBuffSize               = NULL;
+
+	PCSTR           Terminator              = NULL;
+
+	NTSTATUS        STATUS                  = NULL;
+
+	// Getting RtlIpv6StringToAddressA address from ntdll.dll
+	fnRtlIpv6StringToAddressA pRtlIpv6StringToAddressA = (fnRtlIpv6StringToAddressA)GetProcAddress(GetModuleHandle(TEXT("NTDLL")), "RtlIpv6StringToAddressA");
+	if (pRtlIpv6StringToAddressA == NULL) {
+		printf("[!] GetProcAddress Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	// Getting the real size of the shellcode which is the number of IPv6 addresses * 16
+	sBuffSize = NmbrOfElements * 16;
+
+
+	// Allocating memory which will hold the deobfuscated shellcode
+	pBuffer = (PBYTE)HeapAlloc(GetProcessHeap(), 0, sBuffSize);
+	if (pBuffer == NULL) {
+		printf("[!] HeapAlloc Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	TmpBuffer = pBuffer;
+
+	// Loop through all the IPv6 addresses saved in Ipv6Array
+	for (int i = 0; i < NmbrOfElements; i++) {
+
+		// Deobfuscating one IPv6 address at a time
+		// Ipv6Array[i] is a single IPv6 address from the array Ipv6Array
+		if ((STATUS = pRtlIpv6StringToAddressA(Ipv6Array[i], &Terminator, TmpBuffer)) != 0x0) {
+			// if it failed
+			printf("[!] RtlIpv6StringToAddressA Failed At [%s] With Error 0x%0.8X", Ipv6Array[i], STATUS);
+			return FALSE;
+		}
+
+		// 16 bytes are written to TmpBuffer at a time
+		// Therefore Tmpbuffer will be incremented by 16 to store the upcoming 16 bytes
+		TmpBuffer = (PBYTE)(TmpBuffer + 16);
+
+	}
+
+	// Save the base address & size of the deobfuscated payload
+	*ppDAddress  = pBuffer;
+	*pDSize      = sBuffSize;
+
+	return TRUE;
+
+}
 ```
 

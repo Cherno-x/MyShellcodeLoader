@@ -68,6 +68,17 @@ BOOL CreateProcessA(
 
 
 
+#### 实现逻辑
+
+以下步骤总结了执行 PPID 欺骗所需的操作。
+
+1. `CreateProcessA`使用`EXTENDED_STARTUPINFO_PRESENT`标志调用以提供对创建的进程的进一步控制。
+2. 创建的结构`STARTUPINFOEXA`包含属性列表`LPPROC_THREAD_ATTRIBUTE_LIST`。
+3. `InitializeProcThreadAttributeList`被调用来初始化属性列表。该函数必须调用两次，第一次确定属性列表的大小，下一次调用执行初始化。
+4. `UpdateProcThreadAttribute`用于通过设置`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`允许用户指定线程的父进程的标志来更新属性。
+
+
+
 #### 代码示例
 
 ```c++
@@ -248,6 +259,319 @@ int main(void) {
     DeleteProcThreadAttributeList(pAttributeList);
     CloseHandle(hParentProcess);
 
+    return 0;
+}
+
+```
+
+
+
+# Changing Parents Scheduler
+
+利用task scheduler运行程序，使其成为svchost的子进程。
+
+这里需要利用COM接口进行调用。
+
+COM（Component Object Model）接口是一种用于在Windows操作系统中实现组件之间通信的技术。COM接口允许不同的软件组件在不同的进程中进行通信，无论它们是用什么编程语言编写的。COM接口是面向对象的，它将数据和方法封装在一起，并且提供了一种标准的方式来访问这些数据和方法。
+
+COM就是用于完成特定功能的一些DLL，调用COM接口会引入这些DLL。
+
+Task scheduler com object属于mstask.dll
+
+```C++
+#include <windows.h>
+#include <initguid.h>
+#include <ole2.h>
+#include <mstask.h>
+#include <msterr.h>
+#include <objidl.h>
+#include <wchar.h>
+#include <stdio.h>
+
+#pragma comment (lib, "ole32")
+
+//int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+int main(int argc, char **argv) {
+	HRESULT hr = S_OK;
+	ITaskScheduler *pITS;
+
+	printf("Let's start a dance!\n"); getchar();
+	
+	// initialize COM library
+	hr = CoInitialize(NULL);
+
+	printf("COM initialized.\n"); getchar();
+
+	if (SUCCEEDED(hr)) {
+		// get Task Scheduler object
+		hr = CoCreateInstance(CLSID_CTaskScheduler,
+							   NULL,
+							   CLSCTX_INPROC_SERVER,
+							   IID_ITaskScheduler,
+							   (void **) &pITS);
+		if (FAILED(hr)) {
+			CoUninitialize();
+			return 1;
+		}
+	}
+	else 
+		return 1;
+
+	printf("Task Scheduler object is up.\n"); getchar();
+
+	LPCWSTR pwszTaskName;
+	ITask *pITask;
+	IPersistFile *pIPersistFile;
+	pwszTaskName = L"ExecME";
+
+	// create new task
+	hr = pITS->NewWorkItem(pwszTaskName,        // Name of task
+						 CLSID_CTask,           // Class identifier 
+						 IID_ITask,             // Interface identifier
+						 (IUnknown**) &pITask); // Address of task 
+	if (FAILED(hr)) {
+		CoUninitialize();
+		printf("Failed calling NewWorkItem, error = 0x%x\n", hr);
+		return 1;
+	}
+
+	// set task parameters: comment, name, working directory, params
+	pITask->SetComment(L"C'mon! Notepad is legit!");
+	pITask->SetApplicationName(L"C:\\Windows\\System32\\notepad.exe");
+	pITask->SetWorkingDirectory(L"C:\\Windows\\System32");
+	pITask->SetParameters(L"c:\\rto\\boom.txt");
+	pITask->SetAccountInformation(L"rto", NULL);  
+
+	// set Flags
+	pITask->SetFlags(TASK_FLAG_RUN_ONLY_IF_LOGGED_ON);
+	//pITask->SetFlags(TASK_FLAG_RUN_ONLY_IF_LOGGED_ON | TASK_FLAG_HIDDEN);  // hidden flag set on .job file
+
+	// get a pointer to IPersistFile
+	hr = pITask->QueryInterface(IID_IPersistFile,
+							  (void **) &pIPersistFile);
+
+	if (FAILED(hr))	{
+		CoUninitialize();
+		printf("Failed calling QueryInterface, error = 0x%x\n", hr);
+		return 1;
+	}
+
+	// save the new task to disk
+	hr = pIPersistFile->Save(NULL, TRUE);
+	pIPersistFile->Release();
+	
+	if (FAILED(hr)) {
+		CoUninitialize();
+		printf("Failed calling Save, error = 0x%x\n", hr);
+		return 1;
+	}
+
+	printf("Created task.\n");
+
+	// run the task
+	hr = pITask->Run();
+	pITask->Release();
+
+	if (FAILED(hr)) {
+		printf("Failed calling ITask::Run, error = 0x%x\n", hr);
+		CoUninitialize();
+		return 1;
+	}  
+	printf("Task ran.\n");
+
+	printf("Check C:\\Windows\\Tasks folder\n"); getchar();
+
+	// and remove the task
+	pITS->Delete(pwszTaskName);
+	pITS->Release();                               // Release object
+	printf("Task removed\n");
+
+	// clean up
+	CoUninitialize();
+	
+	printf("Go HOME!\n"); getchar();
+	return 0;
+}
+
+```
+
+
+
+# Changing Parents via wmi
+
+WMI（Windows Management Instrumentation）是微软Windows操作系统中的一种管理框架，用于管理和监视系统的各种元素，如硬件、软件、网络等。它提供了一种标准的接口，允许开发人员和系统管理员通过编程方式访问和控制Windows操作系统的各种功能和资源。
+
+wmi功能十分强大，经常用于信息搜集和横向移动，这里不展开介绍。
+
+使用wmi创建进程
+
+```cmd
+wmic process call create "notepad.exe"
+```
+
+
+
+代码实现：
+
+同样是使用COM接口。
+
+```c++
+#define _WIN32_DCOM
+#include <comdef.h>
+#include <Wbemidl.h>
+
+#pragma comment(lib, "wbemuuid.lib")
+
+//int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+int main(int argc, char ** argv) {
+    HRESULT hres;
+
+    // initialize COM library
+    hres =  CoInitializeEx(0, COINIT_MULTITHREADED); 
+    if (FAILED(hres)) {
+		printf("Failed to initialize COM library. Error code = 0x%x\n", hres);
+        return 1;
+    }
+
+    // set COM security levels
+    hres =  CoInitializeSecurity(
+								NULL, 
+								-1,                          // COM negotiates service
+								NULL,                        // Authentication services
+								NULL,                        // Reserved
+								RPC_C_AUTHN_LEVEL_DEFAULT,   // Default authentication 
+								RPC_C_IMP_LEVEL_IMPERSONATE, // Default Impersonation
+								NULL,                        // Authentication info
+								EOAC_NONE,                   // Additional capabilities 
+								NULL                         // Reserved
+								);
+
+    if (FAILED(hres)) {
+		printf("Failed to initialize security. Error code = 0x%x\n", hres);
+        CoUninitialize();
+        return 1;
+    }
+
+    // get the initial locator to WMI
+    IWbemLocator * pLoc = NULL;
+    hres = CoCreateInstance(
+							CLSID_WbemLocator,
+							0, 
+							CLSCTX_INPROC_SERVER, 
+							IID_IWbemLocator, (LPVOID *) &pLoc);
+ 
+    if (FAILED(hres)) {
+		printf("Failed to create IWbemLocator object. Error code = 0x%x\n", hres);
+        CoUninitialize();
+        return 1;
+    }
+
+    // connect to the local root\cimv2 namespace
+    // and obtain pointer pSvc to make IWbemServices calls.
+    IWbemServices * pSvc = NULL;
+    hres = pLoc->ConnectServer(
+							_bstr_t(L"ROOT\\CIMV2"), 
+							NULL,
+							NULL, 
+							0, 
+							NULL, 
+							0, 
+							0, 
+							&pSvc
+							);
+
+    if (FAILED(hres)) {
+		printf("Could not connect. Error code = 0x%x\n", hres);
+        pLoc->Release();
+        CoUninitialize();
+        return 1;
+    }
+
+	printf("Connected to ROOT\\CIMV2 WMI namespace\n");
+
+    // set security levels for the proxy
+    hres = CoSetProxyBlanket(
+							pSvc,                        // Indicates the proxy to set
+							RPC_C_AUTHN_WINNT,           // RPC_C_AUTHN_xxx 
+							RPC_C_AUTHZ_NONE,            // RPC_C_AUTHZ_xxx 
+							NULL,                        // Server principal name 
+							RPC_C_AUTHN_LEVEL_CALL,      // RPC_C_AUTHN_LEVEL_xxx 
+							RPC_C_IMP_LEVEL_IMPERSONATE, // RPC_C_IMP_LEVEL_xxx
+							NULL,                        // client identity
+							EOAC_NONE                    // proxy capabilities 
+							);
+
+    if (FAILED(hres)) {
+		printf("Could not set proxy blanket. Error code = 0x%x\n", hres);
+        pSvc->Release();
+        pLoc->Release();
+        CoUninitialize();
+        return 1;
+    }
+
+    // use the IWbemServices pointer to make requests of WMI
+    // set up to call the Win32_Process::Create method
+    BSTR ClassName = SysAllocString(L"Win32_Process");
+    BSTR MethodName = SysAllocString(L"Create");
+
+    IWbemClassObject * pClass = NULL;
+    hres = pSvc->GetObject(ClassName, 0, NULL, &pClass, NULL);
+
+    IWbemClassObject * pInParamsDefinition = NULL;
+    hres = pClass->GetMethod(MethodName, 0, &pInParamsDefinition, NULL);
+
+    IWbemClassObject * pClassInstance = NULL;
+    hres = pInParamsDefinition->SpawnInstance(0, &pClassInstance);
+
+    // create the values for the in parameters
+    VARIANT varCommand;
+    varCommand.vt = VT_BSTR;
+    varCommand.bstrVal = _bstr_t(L"notepad.exe c:\\rto\\boom.txt");
+
+    // store the value for the in parameters
+    hres = pClassInstance->Put(L"CommandLine", 0, &varCommand, 0);
+    wprintf(L"The command is: %s\n", V_BSTR(&varCommand));
+
+	
+    // and finally - execute method
+    IWbemClassObject * pOutParams = NULL;
+    hres = pSvc->ExecMethod(ClassName, MethodName, 0, NULL, pClassInstance, &pOutParams, NULL);
+
+    if (FAILED(hres)) {
+		printf("Could not execute method. Error code = 0x%x\n", hres);
+        VariantClear(&varCommand);
+        SysFreeString(ClassName);
+        SysFreeString(MethodName);
+        pClass->Release();
+        pClassInstance->Release();
+        pInParamsDefinition->Release();
+        pOutParams->Release();
+        pSvc->Release();
+        pLoc->Release();
+        CoUninitialize();
+        return 1;
+    }
+
+    // To see what the method returned,
+    // use the following code.  The return value will
+    // be in &varReturnValue
+    VARIANT varReturnValue;
+    hres = pOutParams->Get(_bstr_t(L"ReturnValue"), 0, &varReturnValue, NULL, 0);
+
+	wprintf(L"Return value: %s\n", V_BSTR(&varReturnValue));
+
+    // clean up
+    VariantClear(&varCommand);
+    VariantClear(&varReturnValue);
+    SysFreeString(ClassName);
+    SysFreeString(MethodName);
+    pClass->Release();
+    pClassInstance->Release();
+    pInParamsDefinition->Release();
+    pOutParams->Release();
+    pLoc->Release();
+    pSvc->Release();
+    CoUninitialize();
     return 0;
 }
 
