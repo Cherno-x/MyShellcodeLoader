@@ -1,4 +1,7 @@
-# 👺 MyShellcodeLoader
+# MyShellcodeLoader
+
+![MyShellcodeLoader](./README.assets/MyShellcodeLoader.png)
+
 这个Github仓库包含Shellcode Loader的实现原理以及其在恶意软件开发和木马免杀方面的应用。
 
 Shellcode Loader是一种常见的技术，用于将恶意代码加载到目标系统的内存中，并执行它们，通常作为恶意软件的一部分。
