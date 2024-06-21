@@ -1,6 +1,6 @@
 # MyShellcodeLoader
 
-![MyShellcodeLoader](./README.assets/MyShellcodeLoader.png)
+![MyShellcodeLoader (1)](./README.assets/MyShellcodeLoader%20(1).png)
 
 这个Github仓库包含Shellcode Loader的实现原理以及其在恶意软件开发和木马免杀方面的应用。
 
