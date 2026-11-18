@@ -2,7 +2,7 @@
 
 为了使目前编译出的exe显得更像正常程序，需要对其进行一些改造。
 
-### Resource Hacker
+### Resource Hacker or [Resource Cracker](https://www.pelock.com/products/resource-cracker)
 
 https://resource-hacker.en.softonic.com/
 
